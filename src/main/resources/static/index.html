@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TradeCore Prototype - Real-Time Exchange Demo</title>
+    <!-- SockJS and STOMP client libraries for WebSocket streaming -->
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-color: #334155;
+            --buy-color: #10b981;
+            --sell-color: #ef4444;
+            --primary-accent: #38bdf8;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            padding: 24px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 16px;
+            margin-bottom: 24px;
+        }
+
+        .header-title h1 {
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            color: #ffffff;
+        }
+
+        .header-title p {
+            font-size: 14px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #022c22;
+            color: #34d399;
+            padding: 6px 14px;
+            border-radius: 9999px;
+            font-size: 13px;
+            font-weight: 600;
+            border: 1px solid #059669;
+        }
+
+        .status-badge.disconnected {
+            background: #450a0a;
+            color: #f87171;
+            border-color: #dc2626;
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: currentColor;
+            box-shadow: 0 0 8px currentColor;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1.3fr;
+            gap: 24px;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+        }
+
+        .card h2 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: #cbd5e1;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 14px;
+        }
+
+        label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 10px 12px;
+            background-color: #0f172a;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: #ffffff;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+
+        input:focus, select:focus {
+            border-color: var(--primary-accent);
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .btn-buy {
+            background-color: var(--buy-color);
+            color: white;
+        }
+
+        .btn-buy:hover {
+            background-color: #059669;
+        }
+
+        .btn-sell {
+            background-color: var(--sell-color);
+            color: white;
+        }
+
+        .btn-sell:hover {
+            background-color: #dc2626;
+        }
+
+        .btn-refresh {
+            background: #334155;
+            color: #e2e8f0;
+            padding: 4px 8px;
+            font-size: 12px;
+            border-radius: 6px;
+        }
+
+        .btn-refresh:hover {
+            background: #475569;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        th {
+            text-align: left;
+            color: var(--text-muted);
+            font-weight: 500;
+            padding: 8px 6px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        td {
+            padding: 8px 6px;
+            border-bottom: 1px solid #1e293b;
+        }
+
+        .orderbook-side-title {
+            font-size: 12px;
+            text-transform: uppercase;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            padding: 8px 0 4px;
+        }
+
+        .side-ask { color: var(--sell-color); }
+        .side-bid { color: var(--buy-color); }
+
+        .feed-container {
+            max-height: 480px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .trade-item {
+            background: #0f172a;
+            border-left: 4px solid var(--buy-color);
+            padding: 10px 14px;
+            border-radius: 6px;
+            font-size: 13px;
+            animation: fadeIn 0.3s ease-in-out;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .trade-item.sell {
+            border-left-color: var(--sell-color);
+        }
+
+        .trade-details {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .trade-price {
+            font-weight: 700;
+            font-size: 14px;
+        }
+
+        .trade-sub {
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+
+        .trade-time {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        #actionLog {
+            margin-top: 10px;
+            font-size: 12px;
+            padding: 8px;
+            border-radius: 6px;
+            background: #090d16;
+            color: #94a3b8;
+            max-height: 80px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="header-title">
+            <h1>TradeCore Exchange &bull; Part E Prototype</h1>
+            <p>Limit Order Matching, Double-Entry Settlement & STOMP WebSocket Streaming</p>
+        </div>
+        <div id="connectionStatus" class="status-badge disconnected">
+            <span class="status-indicator"></span>
+            <span id="connectionText">Connecting to WebSocket...</span>
+        </div>
+    </header>
+
+    <div class="grid">
+        <!-- 1. Order Entry Card -->
+        <div class="card">
+            <h2>Order Placement</h2>
+            <div class="form-group">
+                <label>Trader / User ID</label>
+                <select id="userId">
+                    <option value="alice">alice (USD: $10,000 | BTC: 5)</option>
+                    <option value="bob">bob (USD: $2,000 | BTC: 10)</option>
+                    <option value="charlie">charlie (USD: $50,000 | BTC: 20)</option>
+                    <option value="dave">dave (USD: $25,000 | BTC: 15)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Price (USD)</label>
+                <input type="number" id="orderPrice" step="0.5" value="50000" placeholder="e.g. 50000.00">
+            </div>
+            <div class="form-group">
+                <label>Quantity (BTC)</label>
+                <input type="number" id="orderQty" step="1" value="1" placeholder="e.g. 1">
+            </div>
+
+            <div class="btn-group">
+                <button class="btn-buy" onclick="placeOrder('BUY')">BUY BTC</button>
+                <button class="btn-sell" onclick="placeOrder('SELL')">SELL BTC</button>
+            </div>
+
+            <div id="actionLog">Ready. Submit an order to test matching.</div>
+        </div>
+
+        <!-- 2. Order Book & Balances -->
+        <div class="card">
+            <h2>
+                <span>Order Book (BTC-USD)</span>
+                <button class="btn-refresh" onclick="fetchOrderBook()">Refresh</button>
+            </h2>
+
+            <div class="orderbook-side-title side-ask">Asks (Sell Orders)</div>
+            <table>
+                <thead><tr><th>Price (USD)</th><th>Remaining Qty</th></tr></thead>
+                <tbody id="asksBody"><tr><td colspan="2" style="color:#64748b;">No asks resting</td></tr></tbody>
+            </table>
+
+            <div class="orderbook-side-title side-bid" style="margin-top: 14px;">Bids (Buy Orders)</div>
+            <table>
+                <thead><tr><th>Price (USD)</th><th>Remaining Qty</th></tr></thead>
+                <tbody id="bidsBody"><tr><td colspan="2" style="color:#64748b;">No bids resting</td></tr></tbody>
+            </table>
+
+            <h2 style="margin-top: 24px;">
+                <span>Account Balance</span>
+                <button class="btn-refresh" onclick="fetchBalance()">Check</button>
+            </h2>
+            <div id="balanceDisplay" style="font-size: 13px; color: #cbd5e1; line-height: 1.6;">
+                Select trader above and click Check.
+            </div>
+        </div>
+
+        <!-- 3. Real-Time Trade Feed -->
+        <div class="card">
+            <h2>
+                <span>Live Settled Trades (/topic/trades)</span>
+                <span id="tradeCount" style="font-size: 12px; color: #94a3b8; font-weight: normal;">0 trades</span>
+            </h2>
+            <div class="feed-container" id="tradeFeed">
+                <div style="color: #64748b; font-size: 13px; text-align: center; margin-top: 40px;">
+                    Listening for trades matching over WebSocket...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let stompClient = null;
+        let totalTrades = 0;
+        const seenTrades = new Set(); // Dedup by tradeId
+
+        function connectWebSocket() {
+            const socket = new SockJS('/ws');
+            stompClient = Stomp.over(socket);
+            stompClient.debug = null; // Suppress verbose console logs
+
+            stompClient.connect({}, function (frame) {
+                const statusBadge = document.getElementById('connectionStatus');
+                const statusText = document.getElementById('connectionText');
+                statusBadge.classList.remove('disconnected');
+                statusText.innerText = 'Connected (STOMP /ws)';
+
+                stompClient.subscribe('/topic/trades', function (message) {
+                    const trade = JSON.parse(message.body);
+                    handleIncomingTrade(trade);
+                });
+            }, function (error) {
+                const statusBadge = document.getElementById('connectionStatus');
+                const statusText = document.getElementById('connectionText');
+                statusBadge.classList.add('disconnected');
+                statusText.innerText = 'Disconnected (Reconnecting...)';
+                setTimeout(connectWebSocket, 4000);
+            });
+        }
+
+        function handleIncomingTrade(trade) {
+            // Deduplication by tradeId
+            if (seenTrades.has(trade.tradeId)) {
+                return;
+            }
+            seenTrades.add(trade.tradeId);
+
+            totalTrades++;
+            document.getElementById('tradeCount').innerText = `${totalTrades} trade(s)`;
+
+            const feed = document.getElementById('tradeFeed');
+            if (totalTrades === 1) {
+                feed.innerHTML = '';
+            }
+
+            const item = document.createElement('div');
+            item.className = 'trade-item';
+            item.innerHTML = `
+                <div class="trade-details">
+                    <div class="trade-price side-bid">$${Number(trade.price).toFixed(2)} &times; ${trade.qty} BTC</div>
+                    <div class="trade-sub">Buyer: <b>${trade.buyerId}</b> &bull; Seller: <b>${trade.sellerId}</b></div>
+                    <div class="trade-sub" style="font-size:11px; color:#64748b;">ID: ${trade.tradeId}</div>
+                </div>
+                <div class="trade-time">${new Date().toLocaleTimeString()}</div>
+            `;
+            feed.insertBefore(item, feed.firstChild);
+
+            // Auto-refresh orderbook and user balances
+            fetchOrderBook();
+            fetchBalance();
+        }
+
+        async function placeOrder(side) {
+            const userId = document.getElementById('userId').value;
+            const price = parseFloat(document.getElementById('orderPrice').value);
+            const qty = parseInt(document.getElementById('orderQty').value, 10);
+            const logBox = document.getElementById('actionLog');
+
+            if (!price || price <= 0 || !qty || qty <= 0) {
+                logBox.innerText = 'Error: Enter valid positive price and qty';
+                return;
+            }
+
+            const orderPayload = {
+                userId: userId,
+                side: side,
+                price: price,
+                qty: qty
+            };
+
+            logBox.innerText = `Submitting ${side} order for ${userId}...`;
+
+            try {
+                const res = await fetch('/orders', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(orderPayload)
+                });
+                const data = await res.json();
+
+                if (res.ok) {
+                    logBox.innerText = `[SUCCESS] Order ${data.orderId} accepted! Matched trades: ${data.executedTrades}`;
+                } else {
+                    logBox.innerText = `[REJECTED (${res.status})] ${data.reason}: ${data.message}`;
+                }
+                fetchOrderBook();
+                fetchBalance();
+            } catch (err) {
+                logBox.innerText = `Network error: ${err.message}`;
+            }
+        }
+
+        async function fetchOrderBook() {
+            try {
+                const res = await fetch('/orderbook');
+                if (!res.ok) return;
+                const book = await res.json();
+
+                const asksBody = document.getElementById('asksBody');
+                if (book.asks && book.asks.length > 0) {
+                    asksBody.innerHTML = book.asks.map(lvl => `
+                        <tr><td class="side-ask">$${Number(lvl.price).toFixed(2)}</td><td>${lvl.qty}</td></tr>
+                    `).join('');
+                } else {
+                    asksBody.innerHTML = '<tr><td colspan="2" style="color:#64748b;">No asks resting</td></tr>';
+                }
+
+                const bidsBody = document.getElementById('bidsBody');
+                if (book.bids && book.bids.length > 0) {
+                    bidsBody.innerHTML = book.bids.map(lvl => `
+                        <tr><td class="side-bid">$${Number(lvl.price).toFixed(2)}</td><td>${lvl.qty}</td></tr>
+                    `).join('');
+                } else {
+                    bidsBody.innerHTML = '<tr><td colspan="2" style="color:#64748b;">No bids resting</td></tr>';
+                }
+            } catch (err) {
+                console.error("Failed to load orderbook", err);
+            }
+        }
+
+        async function fetchBalance() {
+            const userId = document.getElementById('userId').value;
+            const display = document.getElementById('balanceDisplay');
+            try {
+                const res = await fetch(`/balances/${userId}`);
+                if (res.ok) {
+                    const acc = await res.json();
+                    display.innerHTML = `
+                        <b>User:</b> ${acc.userId}<br>
+                        <b>USD Cash:</b> $${Number(acc.cashBalance).toLocaleString('en-US', {minimumFractionDigits: 2})}<br>
+                        <b>BTC Asset:</b> ${acc.assetBalance} BTC
+                    `;
+                } else {
+                    display.innerText = `User account '${userId}' not found.`;
+                }
+            } catch (err) {
+                display.innerText = 'Error fetching balance.';
+            }
+        }
+
+        document.getElementById('userId').addEventListener('change', fetchBalance);
+
+        // Initial setup
+        window.onload = function () {
+            connectWebSocket();
+            fetchOrderBook();
+            fetchBalance();
+        };
+    </script>
+</body>
+</html>
