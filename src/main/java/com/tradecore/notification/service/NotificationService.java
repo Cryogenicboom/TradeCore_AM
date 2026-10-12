@@ -31,10 +31,13 @@ public class NotificationService {
     }
 
     private void insertIfMissing(String tradeId, String userId, String type, String message, Instant createdAt) {
-        jdbcTemplate.update(
-                "INSERT INTO notifications (trade_id, user_id, type, message, created_at) " +
-                "VALUES (?, ?, ?, ?, ?) ON CONFLICT (trade_id, user_id, type) DO NOTHING",
-                tradeId, userId, type, message, Timestamp.from(createdAt));
+        try {
+            jdbcTemplate.update(
+                    "INSERT INTO notifications (trade_id, user_id, type, message, created_at) VALUES (?, ?, ?, ?, ?)",
+                    tradeId, userId, type, message, Timestamp.from(createdAt));
+        } catch (org.springframework.dao.DuplicateKeyException ignored) {
+            // Idempotent duplicate notification ignored
+        }
     }
 
     public List<NotificationResponse> getNotificationsForUser(String userId) {

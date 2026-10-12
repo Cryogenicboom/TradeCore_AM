@@ -44,14 +44,17 @@ public class LedgerServiceImpl implements LedgerService {
         BigDecimal tradeQty = BigDecimal.valueOf(trade.qty());
         BigDecimal totalUsdValue = trade.price().multiply(tradeQty);
 
-        // 4 & 5. Claim the trade ID atomically using PostgreSQL ON CONFLICT DO NOTHING
-        // Return false if trade has already been settled (idempotency check)
-        int inserted = jdbcTemplate.update(
-                "INSERT INTO settlements (trade_id, settled_at) VALUES (?, CURRENT_TIMESTAMP) ON CONFLICT (trade_id) DO NOTHING",
-                trade.tradeId()
-        );
-
-        if (inserted == 0) {
+        // 4 & 5. Claim the trade ID atomically and idempotently
+        try {
+            int inserted = jdbcTemplate.update(
+                    "INSERT INTO settlements (trade_id, settled_at) VALUES (?, CURRENT_TIMESTAMP)",
+                    trade.tradeId()
+            );
+            if (inserted == 0) {
+                log.info("Trade {} has already been settled. Skipping settlement (idempotent no-op).", trade.tradeId());
+                return false;
+            }
+        } catch (org.springframework.dao.DuplicateKeyException ex) {
             log.info("Trade {} has already been settled. Skipping settlement (idempotent no-op).", trade.tradeId());
             return false;
         }
